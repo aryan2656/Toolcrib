@@ -1,0 +1,3 @@
+Checkout/Employee/Tool FKs use `on_delete=PROTECT`, not CASCADE — rejected CASCADE because tools/employees are soft-disabled via `is_active`, never hard-deleted, so silent history loss would mean a bug elsewhere.
+`Tool.objects.currently_out()` filters via `Exists(Checkout...)` subquery, not `filter(checkouts__returned_at__isnull=True)` — rejected the plain filter because the reverse-FK LEFT JOIN makes `__isnull=True` also match tools with zero checkouts, wrongly including never-checked-out tools.
+`Checkout.open()` computes `due_back_at` as `checked_out_at + DEFAULT_LOAN_HOURS` in the model layer, not left for the caller — rejected requiring callers to pass `due_back_at` because the 8-hour default is a business rule, not a view/service concern.

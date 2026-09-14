@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 db.sqlite3
 .env
+
+# kept locally only, never pushed
+CLAUDE.md
+PLAN.md

@@ -13,19 +13,21 @@
     <div id="board-error" class="alert alert-danger" hidden></div>
     <div id="board-empty" class="alert alert-secondary" hidden>Nothing is currently checked out.</div>
 
-    <table class="table table-hover align-middle">
-        <thead>
-        <tr>
-            <th>Tool</th>
-            <th>Description</th>
-            <th>Holder</th>
-            <th>Checked Out</th>
-            <th>Due Back</th>
-            <th>Status</th>
-        </tr>
-        </thead>
-        <tbody id="board-body"></tbody>
-    </table>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead>
+            <tr>
+                <th>Tool</th>
+                <th>Description</th>
+                <th>Holder</th>
+                <th>Checked Out</th>
+                <th>Due Back</th>
+                <th>Status</th>
+            </tr>
+            </thead>
+            <tbody id="board-body"></tbody>
+        </table>
+    </div>
 
     <p class="text-secondary small" id="generated-at"></p>
 </main>

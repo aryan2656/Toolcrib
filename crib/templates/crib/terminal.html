@@ -1,0 +1,42 @@
+{% extends "crib/base.html" %}
+{% load static %}
+
+{% block title %}Scan Terminal{% endblock %}
+
+{% block content %}
+<main class="d-flex flex-column align-items-center justify-content-center vh-100 text-center px-3" id="terminal">
+    <h1 class="display-3 fw-bold mb-3" id="status-text">Scan your badge</h1>
+    <p class="fs-2 text-secondary mb-4" id="employee-name" hidden></p>
+
+    <div class="d-none" id="result-banner" role="alert"></div>
+
+    <details class="mt-5">
+        <summary class="fs-5 text-secondary">Manual entry</summary>
+        <form id="manual-entry-form" class="d-flex gap-2 mt-3">
+            {% csrf_token %}
+            <input type="text" id="manual-entry-input" class="form-control form-control-lg"
+                   placeholder="E-1234 or T-0042" autocomplete="off">
+            <button type="submit" class="btn btn-secondary">Enter</button>
+        </form>
+    </details>
+
+    {% if debug %}
+    <div id="dev-scanner-panel" class="position-fixed bottom-0 end-0 p-3"></div>
+    {% endif %}
+</main>
+{% endblock %}
+
+{% block extra_js %}
+<script type="module">
+    import {initTerminal} from "{% static 'js/terminal.js' %}";
+
+    initTerminal();
+</script>
+{% if debug %}
+<script type="module">
+    import {initDevScanner} from "{% static 'js/dev-scanner.js' %}";
+
+    initDevScanner(document.getElementById("dev-scanner-panel"));
+</script>
+{% endif %}
+{% endblock %}

@@ -1,9 +1,15 @@
 import json
 
+from django.conf import settings
 from django.http import JsonResponse
+from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_POST
 
 from .services import board_state, handle_scan
+
+
+def terminal(request):
+    return render(request, "crib/terminal.html", {"debug": settings.DEBUG})
 
 
 @require_POST

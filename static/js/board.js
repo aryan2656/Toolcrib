@@ -1,14 +1,33 @@
-// Polls GET /api/board/ every 5 seconds. Every fetch gets a timeout, an
-// error state (shown without tearing down the last-known-good table), and
-// an empty state — and a stale indicator flips on if polling has been
-// failing for more than 15 seconds straight.
+// Live board updates over a WebSocket (Django Channels + Redis channel
+// layer), not polling: the server pushes a fresh board_state() on every
+// checkout/return via crib/services.py::_notify_board_update(). Still
+// gets everything a polling loop would need for resilience — a timeout
+// on the connection attempt has no meaning for WebSockets, so instead:
+// automatic reconnection with capped exponential backoff, a ping/pong
+// keep-alive so a half-dead connection is caught quickly, and a stale
+// indicator if no message (data or pong) has arrived in 15 seconds.
 
-const POLL_INTERVAL_MS = 5000;
-const FETCH_TIMEOUT_MS = 5000;
 const STALE_AFTER_MS = 15000;
+const PING_INTERVAL_MS = 10000;
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 10000;
 
 let elements = {};
-let lastSuccessAt = null;
+let socket = null;
+let reconnectAttempt = 0;
+let reconnectTimer = null;
+let pingTimer = null;
+let lastMessageAt = null;
+
+// The browser's own connectivity signal fires the moment the OS reports the
+// network is back — don't make the operator wait out the backoff timer.
+window.addEventListener("online", () => {
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+    clearTimeout(reconnectTimer);
+    connect();
+});
 
 export function initBoard() {
     elements = {
@@ -19,30 +38,49 @@ export function initBoard() {
         generatedAt: document.getElementById("generated-at"),
     };
 
-    poll();
-    setInterval(poll, POLL_INTERVAL_MS);
+    connect();
     setInterval(updateStaleIndicator, 1000);
 }
 
-async function poll() {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+function connect() {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    socket = new WebSocket(`${protocol}//${window.location.host}/ws/board/`);
 
-    try {
-        const response = await fetch("/api/board/", {signal: controller.signal});
-        if (!response.ok) {
-            throw new Error(`board request failed with status ${response.status}`);
-        }
-        const data = await response.json();
-        render(data);
-        lastSuccessAt = Date.now();
+    socket.addEventListener("open", () => {
+        reconnectAttempt = 0;
         elements.error.hidden = true;
-    } catch (error) {
-        elements.error.hidden = false;
-        elements.error.textContent = "Couldn't reach the server. Retrying...";
-    } finally {
-        clearTimeout(timeout);
+        pingTimer = setInterval(sendPing, PING_INTERVAL_MS);
+    });
+
+    socket.addEventListener("message", (event) => {
+        const payload = JSON.parse(event.data);
+        lastMessageAt = Date.now();
+        if (payload.type === "board_state") {
+            render(payload);
+            elements.error.hidden = true;
+        }
+        // "pong" needs no handling beyond the lastMessageAt update above —
+        // it exists purely to prove the connection is still alive.
+    });
+
+    socket.addEventListener("close", scheduleReconnect);
+    socket.addEventListener("error", () => socket.close());
+}
+
+function sendPing() {
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({type: "ping"}));
     }
+}
+
+function scheduleReconnect() {
+    clearInterval(pingTimer);
+    elements.error.hidden = false;
+    elements.error.textContent = "Connection lost. Reconnecting...";
+
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** reconnectAttempt, RECONNECT_MAX_MS);
+    reconnectAttempt += 1;
+    reconnectTimer = setTimeout(connect, delay);
 }
 
 function render(data) {
@@ -70,10 +108,10 @@ function render(data) {
 }
 
 function updateStaleIndicator() {
-    if (lastSuccessAt === null) {
+    if (lastMessageAt === null) {
         return;
     }
-    elements.stale.hidden = Date.now() - lastSuccessAt <= STALE_AFTER_MS;
+    elements.stale.hidden = Date.now() - lastMessageAt <= STALE_AFTER_MS;
 }
 
 function formatTime(iso) {

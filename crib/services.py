@@ -1,11 +1,29 @@
+import logging
 from datetime import timedelta
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db.models import Q
 from django.utils import timezone
 
 from .models import Checkout, Employee, Tool
 
 IDEMPOTENCY_WINDOW = timedelta(seconds=2)
+BOARD_GROUP = "board"
+
+logger = logging.getLogger(__name__)
+
+
+def _notify_board_update():
+    # Never let a live-board push failure (e.g. Redis is down) break the
+    # actual checkout/return — that's the operation that matters.
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+    try:
+        async_to_sync(channel_layer.group_send)(BOARD_GROUP, {"type": "board.update"})
+    except Exception:
+        logger.exception("Failed to broadcast board update")
 
 
 def _tool_payload(tool):
@@ -93,11 +111,13 @@ def handle_scan(badge, asset_tag):
 
     if current is None:
         checkout = Checkout.open(tool, employee, checked_out_at=now)
+        _notify_board_update()
         return _checkout_result(checkout, tool, employee)
 
     if current.employee_id == employee.id:
         current.returned_at = now
         current.save(update_fields=["returned_at"])
+        _notify_board_update()
         return _checkout_result(current, tool, employee)
 
     return {

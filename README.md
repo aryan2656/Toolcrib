@@ -24,14 +24,19 @@ Backend and frontend are both functional end-to-end.
       simulates them when `DEBUG=True`)
 - [x] `api.js` — every scan gets a timeout, and a network failure is queued
       and retried automatically rather than lost
-- [x] Board UI — polls every 5s, flags overdue tools, shows a stale
-      indicator if polling has been failing for 15+ seconds
+- [x] Board UI — live over a Django Channels WebSocket (not polling):
+      pushed on every checkout/return, flags overdue tools, reconnects
+      automatically (capped backoff + immediate retry on the browser's
+      `online` event), and shows a stale indicator after 15s with no
+      message
 
 ## Stack
 
 - Django 5.2, plain views returning `JsonResponse` — no DRF
+- Django Channels + Daphne (ASGI) for the live board; Redis as the channel
+  layer in dev/prod, `channels.layers.InMemoryChannelLayer` in tests
 - SQLite for local development (`db.sqlite3`)
-- pytest / pytest-django for tests
+- pytest / pytest-django (+ pytest-asyncio for the WebSocket consumer tests)
 - Vanilla ES6 + Bootstrap 5.3 (CDN) for the frontend — no build step, no npm,
   no framework
 
@@ -54,17 +59,27 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
+redis-server &                    # needed for the live board (not the scan API)
+
 python manage.py migrate
 python manage.py seed_crib        # 20 employees, 30 tools, 5 open checkouts
 python manage.py createsuperuser  # to browse /admin
-python manage.py runserver
+python manage.py runserver        # serves over ASGI/Daphne (channels + daphne installed)
 ```
+
+`handle_scan()` degrades gracefully if Redis isn't running — checking a
+tool in/out never fails because the live-board push failed — but the board
+page won't receive live updates until Redis is back.
 
 ## Testing
 
 ```bash
 pytest
 ```
+
+Tests don't need Redis running — the WebSocket consumer tests
+(`tests/test_consumers.py`) swap in Channels' in-memory layer for the
+duration of the test.
 
 ## API
 
@@ -100,35 +115,48 @@ Returns everything currently checked out, ordered soonest-due-first:
 }
 ```
 
+### `ws://.../ws/board/`
+
+Pushes the same shape as `GET /api/board/` as `{"type": "board_state", ...}`
+on connect, and again on every checkout/return — see
+`crib/consumers.py::BoardConsumer`. Accepts `{"type": "ping"}`, replies
+`{"type": "pong"}` (keep-alive, used by `board.js` to detect a half-dead
+connection).
+
 ## Pages
 
 - `/` — the scan terminal (`terminal.html` + `terminal.js` + `scanner.js`)
-- `/board/` — the auto-refreshing board (`board.html` + `board.js`)
+- `/board/` — the live board (`board.html` + `board.js`, over WebSocket)
 
 ## Project layout
 
 ```
-config/            settings, urls, wsgi
+config/
+  settings.py                    channels/daphne, CHANNEL_LAYERS (Redis)
+  asgi.py                        ProtocolTypeRouter: http + websocket
 crib/
-  models.py                     Employee, Tool, Checkout
-  services.py                   handle_scan(), board_state() — all business rules
-  views.py                      terminal, board_page, /api/scan/, /api/board/
+  models.py                      Employee, Tool, Checkout
+  services.py                    handle_scan(), board_state() — all business rules
+  consumers.py                   BoardConsumer — pushes board_state() over WS
+  routing.py                     websocket_urlpatterns
+  views.py                       terminal, board_page, /api/scan/, /api/board/
   admin.py
   management/commands/seed_crib.py
   templates/crib/
-    base.html                   Bootstrap 5.3 (CDN), touch-first sizing
+    base.html                    Bootstrap 5.3 (CDN), touch-first sizing
     terminal.html
     board.html
 static/js/
-  scanner.js                    keystroke-timing scan detection
-  dev-scanner.js                DEBUG-only scan simulator
-  terminal.js                   three-state terminal state machine
-  api.js                        fetch wrapper: timeout, offline queue, retry
-  board.js                      5s polling, overdue flag, stale indicator
+  scanner.js                     keystroke-timing scan detection
+  dev-scanner.js                 DEBUG-only scan simulator
+  terminal.js                    three-state terminal state machine
+  api.js                         fetch wrapper: timeout, offline queue, retry
+  board.js                       WebSocket client: reconnect, stale indicator
 tests/
-  conftest.py                   shared fixtures
+  conftest.py                    shared fixtures
   test_services.py
   test_board.py
+  test_consumers.py              WebsocketCommunicator, in-memory channel layer
 ```
 
 Non-obvious design decisions and their rejected alternatives are logged in

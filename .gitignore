@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 db.sqlite3
 .env
+dump.rdb
 
 # kept locally only, never pushed
 CLAUDE.md

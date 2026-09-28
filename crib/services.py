@@ -107,3 +107,21 @@ def handle_scan(badge, asset_tag):
         "since": current.checked_out_at,
         "message": f"{tool.asset_tag} is already checked out to {current.employee.name}.",
     }
+
+
+def board_state():
+    now = timezone.now()
+    rows = []
+    for tool in Tool.objects.currently_out():
+        checkout = tool.current_checkout
+        rows.append({
+            "asset_tag": tool.asset_tag,
+            "description": tool.description,
+            "holder_name": checkout.employee.name,
+            "checked_out_at": checkout.checked_out_at,
+            "due_back_at": checkout.due_back_at,
+            "overdue": checkout.due_back_at < now,
+        })
+    rows.sort(key=lambda row: row["due_back_at"])
+    return {"tools": rows, "generated_at": now}
+

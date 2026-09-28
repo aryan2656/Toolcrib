@@ -1,9 +1,9 @@
 import json
 
 from django.http import JsonResponse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
-from .services import handle_scan
+from .services import board_state, handle_scan
 
 
 @require_POST
@@ -27,3 +27,8 @@ def scan(request):
     result = handle_scan(badge, asset_tag)
     status = result.pop("status")
     return JsonResponse(result, status=status)
+
+
+@require_GET
+def board(request):
+    return JsonResponse(board_state())

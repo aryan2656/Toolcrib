@@ -1,0 +1,40 @@
+{% extends "crib/base.html" %}
+{% load static %}
+
+{% block title %}Tool Board{% endblock %}
+
+{% block content %}
+<main class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h2 mb-0">Tools Currently Out</h1>
+        <span id="stale-indicator" class="badge text-bg-warning fs-6" hidden>Updates delayed</span>
+    </div>
+
+    <div id="board-error" class="alert alert-danger" hidden></div>
+    <div id="board-empty" class="alert alert-secondary" hidden>Nothing is currently checked out.</div>
+
+    <table class="table table-hover align-middle">
+        <thead>
+        <tr>
+            <th>Tool</th>
+            <th>Description</th>
+            <th>Holder</th>
+            <th>Checked Out</th>
+            <th>Due Back</th>
+            <th>Status</th>
+        </tr>
+        </thead>
+        <tbody id="board-body"></tbody>
+    </table>
+
+    <p class="text-secondary small" id="generated-at"></p>
+</main>
+{% endblock %}
+
+{% block extra_js %}
+<script type="module">
+    import {initBoard} from "{% static 'js/board.js' %}";
+
+    initBoard();
+</script>
+{% endblock %}

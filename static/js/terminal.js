@@ -1,8 +1,8 @@
 import {onScan} from "./scanner.js";
+import {submitScan, onQueueChange} from "./api.js";
 
 const IDLE_TIMEOUT_MS = 10000;
 const RESULT_DISPLAY_MS = 3000;
-const SCAN_TIMEOUT_MS = 5000;
 
 const STATE = {
     AWAITING_BADGE: "AWAITING_BADGE",
@@ -22,10 +22,12 @@ export function initTerminal() {
         resultBanner: document.getElementById("result-banner"),
         manualForm: document.getElementById("manual-entry-form"),
         manualInput: document.getElementById("manual-entry-input"),
+        queueIndicator: document.getElementById("queue-indicator"),
     };
 
     enterAwaitingBadge();
     onScan((value) => handleScan(value.trim().toUpperCase()));
+    onQueueChange(updateQueueIndicator);
 
     elements.manualForm.addEventListener("submit", (event) => {
         event.preventDefault();
@@ -59,7 +61,7 @@ function handleScan(value) {
             badge = value;
             enterAwaitingTool(); // replaces badge, refreshes idle timer
         } else if (value.startsWith("T-")) {
-            submitScan(badge, value);
+            performScan(badge, value);
         }
     }
 }
@@ -101,40 +103,31 @@ function hideBanner() {
     elements.resultBanner.textContent = "";
 }
 
-async function submitScan(scannedBadge, assetTag) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
-
-    try {
-        const response = await fetch("/api/scan/", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "X-CSRFToken": getCsrfToken(),
-            },
-            body: JSON.stringify({badge: scannedBadge, asset_tag: assetTag}),
-            signal: controller.signal,
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-            enterResult(data.message || "Something went wrong.", "danger");
-            return;
-        }
-
-        if (data.action === "checked_out") {
-            enterResult(`Checked out to ${data.employee.name}`, "success");
-        } else {
-            enterResult(`Returned (${data.duration_minutes} min)`, "primary");
-        }
-    } catch (error) {
-        enterResult("Network error — scan not recorded. Try again.", "danger");
-    } finally {
-        clearTimeout(timeout);
+function updateQueueIndicator(depth) {
+    if (depth === 0) {
+        elements.queueIndicator.hidden = true;
+        return;
     }
+    elements.queueIndicator.hidden = false;
+    elements.queueIndicator.textContent = `${depth} scan${depth === 1 ? "" : "s"} pending`;
 }
 
-function getCsrfToken() {
-    const match = document.cookie.match(/csrftoken=([^;]+)/);
-    return match ? match[1] : "";
+async function performScan(scannedBadge, assetTag) {
+    const result = await submitScan(scannedBadge, assetTag);
+
+    if (result.queued) {
+        enterResult("Offline — scan queued, will retry automatically", "warning");
+        return;
+    }
+
+    if (!result.ok) {
+        enterResult(result.data.message || "Something went wrong.", "danger");
+        return;
+    }
+
+    if (result.data.action === "checked_out") {
+        enterResult(`Checked out to ${result.data.employee.name}`, "success");
+    } else {
+        enterResult(`Returned (${result.data.duration_minutes} min)`, "primary");
+    }
 }

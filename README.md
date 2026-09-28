@@ -12,22 +12,28 @@ means asking around the floor.
 
 ## Status
 
-Backend is functional; frontend is not built yet.
+Backend and frontend are both functional end-to-end.
 
 - [x] Data model — `Employee`, `Tool`, `Checkout`
 - [x] Django admin for all three models
 - [x] `seed_crib` management command (re-runnable demo data)
 - [x] `POST /api/scan/` — check a tool in or out, with full pytest coverage
-- [ ] `GET /api/board/` — what's currently out
-- [ ] Terminal UI (scan-driven, touch-first)
-- [ ] Board UI (auto-refreshing)
+- [x] `GET /api/board/` — what's currently out
+- [x] Terminal UI — scan-driven, touch-first, three-state machine
+      (`scanner.js` detects real scans by keystroke timing; `dev-scanner.js`
+      simulates them when `DEBUG=True`)
+- [x] `api.js` — every scan gets a timeout, and a network failure is queued
+      and retried automatically rather than lost
+- [x] Board UI — polls every 5s, flags overdue tools, shows a stale
+      indicator if polling has been failing for 15+ seconds
 
 ## Stack
 
 - Django 5.2, plain views returning `JsonResponse` — no DRF
 - SQLite for local development (`db.sqlite3`)
 - pytest / pytest-django for tests
-- Vanilla ES6 + Bootstrap 5.3 planned for the frontend — no build step, no npm
+- Vanilla ES6 + Bootstrap 5.3 (CDN) for the frontend — no build step, no npm,
+  no framework
 
 ## Data model
 
@@ -80,18 +86,49 @@ Body: `{"badge": "E-1001", "asset_tag": "T-0001"}`
 All business logic lives in `crib/services.py::handle_scan()`; the view only
 parses the request and maps the result to a status code.
 
+### `GET /api/board/`
+
+Returns everything currently checked out, ordered soonest-due-first:
+
+```json
+{
+  "tools": [
+    {"asset_tag": "T-0003", "description": "Cordless drill", "holder_name": "James Nguyen",
+     "checked_out_at": "...", "due_back_at": "...", "overdue": false}
+  ],
+  "generated_at": "..."
+}
+```
+
+## Pages
+
+- `/` — the scan terminal (`terminal.html` + `terminal.js` + `scanner.js`)
+- `/board/` — the auto-refreshing board (`board.html` + `board.js`)
+
 ## Project layout
 
 ```
 config/            settings, urls, wsgi
 crib/
-  models.py        Employee, Tool, Checkout
-  services.py       handle_scan() — all business rules
-  views.py           /api/scan/
+  models.py                     Employee, Tool, Checkout
+  services.py                   handle_scan(), board_state() — all business rules
+  views.py                      terminal, board_page, /api/scan/, /api/board/
   admin.py
   management/commands/seed_crib.py
+  templates/crib/
+    base.html                   Bootstrap 5.3 (CDN), touch-first sizing
+    terminal.html
+    board.html
+static/js/
+  scanner.js                    keystroke-timing scan detection
+  dev-scanner.js                DEBUG-only scan simulator
+  terminal.js                   three-state terminal state machine
+  api.js                        fetch wrapper: timeout, offline queue, retry
+  board.js                      5s polling, overdue flag, stale indicator
 tests/
+  conftest.py                   shared fixtures
   test_services.py
+  test_board.py
 ```
 
 Non-obvious design decisions and their rejected alternatives are logged in

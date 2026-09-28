@@ -12,6 +12,10 @@ def terminal(request):
     return render(request, "crib/terminal.html", {"debug": settings.DEBUG})
 
 
+def board_page(request):
+    return render(request, "crib/board.html")
+
+
 @require_POST
 def scan(request):
     try:
